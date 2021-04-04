@@ -1,4 +1,4 @@
-module github.com/service
+module github.com/derv-dice/service
 
 go 1.16
 
