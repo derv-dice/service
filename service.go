@@ -91,11 +91,11 @@ func (s *Service) Start(cert, key string) (err error) {
 }
 
 func (s *Service) Stop() (err error) {
-	s.WPool.StopAll()
+	go s.WPool.StopAll()
 
 	ctxShutDown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err = s.server.Shutdown(ctxShutDown); err != nil {
+	if err = s.server.Shutdown(ctxShutDown); err != nil && err != http.ErrServerClosed {
 		return err
 	}
 
