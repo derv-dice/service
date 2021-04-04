@@ -24,18 +24,18 @@ func NewWorker(name string, interval time.Duration, Func func() error) *Worker {
 }
 
 func (w *Worker) Start() {
-	log.Printf("Worker: name='%s' has started\n", w.name)
+	log.Printf("worker: name='%s' has started\n", w.name)
 	w.active = true
 	for {
 		select {
 		case needClose, notEmpty := <-w.closer:
 			if notEmpty && needClose {
-				log.Printf("Worker: name='%s' has been stoped\n", w.name)
+				log.Printf("worker: name='%s' has been stoped\n", w.name)
 				return
 			}
 		default:
 			if err := w.f(); err != nil {
-				log.Printf("Worker: name='%s' error='%v'", w.name, err)
+				log.Printf("worker: name='%s' error='%v'", w.name, err)
 			}
 		}
 
@@ -50,7 +50,7 @@ func (w *Worker) Stop() {
 }
 
 func (w *Worker) Restart() {
-	log.Printf("Worker: name='%s' has been restarted\n", w.name)
+	log.Printf("worker: name='%s' has been restarted\n", w.name)
 	w.Stop()
 	w.Start()
 }

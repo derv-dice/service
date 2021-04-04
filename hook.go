@@ -3,7 +3,7 @@ package service
 import (
 	"bytes"
 	"fmt"
-	"mime/multipart"
+	"github.com/jackc/pgx"
 	"net/http"
 	"time"
 )
@@ -12,35 +12,55 @@ import (
 type Hook struct {
 	name string
 
-	http.Client
-	*Service // Указатель на сервис родитель для проброса коннекта к БД
+	client  http.Client
+	service *Service // Указатель на сервис родитель для проброса коннекта к БД
 }
 
 func NewHook(name string, timeout time.Duration, service *Service) *Hook {
 	return &Hook{
 		name:    name,
-		Service: service,
-		Client:  http.Client{Timeout: timeout},
+		service: service,
+		client:  http.Client{Timeout: timeout},
 	}
 }
 
-func (h *Hook) execute() (err error) {
+func (h *Hook) Execute() (err error) {
 	// Загружаем инфу о подписчиках из БД
-	//TODO subs()
+	var s []*Subscriber
+	if s, err = h.subs(); err != nil {
+		return err
+	}
 
 	// Выполняем функцию
-	form := registeredHookFunc.m[h.name]
+	form := registeredHookFunc.m[h.name]()
 	if form == nil {
-		return fmt.Errorf("hook: name='%s' error='fuction for execute Hook not found", h.name)
+		return fmt.Errorf("hook: name='%s' error='fuction for Execute Hook not found", h.name)
 	}
 
 	// Отправка обратных запросов подписчикам
-
+	for i := range s {
+		h.sendToSubs(s[i].URL, form)
+	}
 	return
 }
 
-func subs() {
+func (h *Hook) subs() (s []*Subscriber, err error) {
+	s = []*Subscriber{}
 
+	var rows *pgx.Rows
+	if rows, err = h.service.DB().Query(sqlSelectSubs, h.name); err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		tmp := &Subscriber{}
+		if err = rows.Scan(&tmp.URL); err != nil {
+			return nil, err
+		}
+		s = append(s, tmp)
+	}
+	return
 }
 
 func (h *Hook) sendToSubs(url string, form *Form) {
@@ -54,7 +74,7 @@ func (h *Hook) sendToSubs(url string, form *Form) {
 
 }
 
-type HookFunc func() *multipart.Form
+type HookFunc func() *Form
 
 type Form struct {
 	Payload     *bytes.Buffer
