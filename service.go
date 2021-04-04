@@ -57,13 +57,14 @@ func (s *Service) Start(cert, key string) (err error) {
 
 	// Запуск сервера
 	go func() {
+
 		if cert != "" && key != "" {
 			err = s.server.ListenAndServeTLS(cert, key)
 		} else {
 			err = s.server.ListenAndServe()
 		}
 
-		if err != nil {
+		if err != nil && err != http.ErrServerClosed {
 			panic(fmt.Errorf(startingErr, s.name, err))
 		}
 	}()
