@@ -52,6 +52,8 @@ func (s *Service) Start(cert, key string) (err error) {
 	}
 
 	// Добавление обработчиков
+	// TODO GET: /sub/:hook/:back_url
+	// TODO GET: /unsub/:hook/:back_url/:id
 
 	// Запуск сервера
 	go func() {
@@ -67,7 +69,7 @@ func (s *Service) Start(cert, key string) (err error) {
 	}()
 
 	// Запуск воркеров
-	s.WPool.StartAll()
+	go s.WPool.StartAll()
 
 	log.Printf("service: name='%s' has been started\n", s.name)
 
