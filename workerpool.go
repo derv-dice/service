@@ -2,66 +2,68 @@ package service
 
 import "sync"
 
-type WorkerPool struct {
-	workers map[string]*Worker
+type workerPool struct {
+	parent  *Service
+	workers map[string]*worker
 	sync.Mutex
 }
 
-func NewPorkersPool() *WorkerPool {
-	return &WorkerPool{
-		workers: map[string]*Worker{},
+func newWorkerPool(parent *Service) *workerPool {
+	return &workerPool{
+		parent:  parent,
+		workers: map[string]*worker{},
 		Mutex:   sync.Mutex{},
 	}
 }
 
-// Add - Добавление нового Worker в пул. Если Worker с таким именем уже есть, он останавливается и заменяется на новый
-func (p *WorkerPool) Add(worker *Worker) {
-	p.Mutex.Lock()
-	defer p.Mutex.Unlock()
+func (p *workerPool) add(worker *worker) {
+	p.Lock()
+	defer p.Unlock()
 	p.stopIfActive(worker.name)
-
 	p.workers[worker.name] = worker
 }
 
-func (p *WorkerPool) Delete(name string) {
-	p.Mutex.Lock()
-	defer p.Mutex.Unlock()
+func (p *workerPool) delete(name string) {
+	p.Lock()
+	defer p.Unlock()
 	p.stopIfActive(name)
-
-	p.workers[name] = nil
+	delete(p.workers, name)
 }
 
-func (p *WorkerPool) DeleteAll() {
+func (p *workerPool) deleteAll() {
 	for name := range p.workers {
-		p.Delete(name)
+		p.delete(name)
 	}
 }
 
-func (p *WorkerPool) StopAll() {
+func (p *workerPool) stopAll() {
 	for name := range p.workers {
-		p.stopIfActive(name)
+		go p.stopIfActive(name)
 	}
 }
 
-func (p *WorkerPool) StartAll() {
+func (p *workerPool) startAll() {
 	for name := range p.workers {
-		p.startIfInactive(name)
+		go p.startIfInactive(name)
 	}
 }
 
-func (p *WorkerPool) RestartAll() {
-	p.StopAll()
-	p.StartAll()
+func (p *workerPool) restartAll() {
+	p.stopAll()
+	p.startAll()
 }
 
-func (p *WorkerPool) stopIfActive(name string) {
-	if p.workers[name] != nil && p.workers[name].IsActive() {
-		p.workers[name].Stop()
+func (p *workerPool) startByName(name string) { go p.startIfInactive(name) }
+func (p *workerPool) stopByName(name string)  { go p.stopIfActive(name) }
+
+func (p *workerPool) stopIfActive(name string) {
+	if p.workers[name] != nil && p.workers[name].isActive() {
+		p.workers[name].stop()
 	}
 }
 
-func (p *WorkerPool) startIfInactive(name string) {
-	if p.workers[name] != nil && !p.workers[name].IsActive() {
-		p.workers[name].Start()
+func (p *workerPool) startIfInactive(name string) {
+	if p.workers[name] != nil && !p.workers[name].isActive() {
+		p.workers[name].start()
 	}
 }

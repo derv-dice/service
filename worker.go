@@ -5,63 +5,75 @@ import (
 	"time"
 )
 
-// Worker - Функция, выполняющаяся в фоне с заданным интервалом
-type Worker struct {
+const minPeriodSec = 1
+
+type worker struct {
 	name     string
-	interval time.Duration
-	f        func() error
-	closer   chan bool
+	period   time.Duration
+	function func() error
+	close    chan bool
 	active   bool
 }
 
-func NewWorker(name string, interval time.Duration, Func func() error) *Worker {
-	return &Worker{
+func newWorker(name string, period time.Duration, function func() error) *worker {
+	if period < minPeriodSec*time.Second {
+		period = minPeriodSec * time.Second
+	}
+
+	if !validName(name) {
+		log.Printf(workerErr, "", "invalid Name")
+		return nil
+	}
+
+	return &worker{
 		name:     name,
-		interval: interval,
-		f:        Func,
-		closer:   make(chan bool, 1),
+		period:   period,
+		function: function,
+		close:    make(chan bool, 1),
 	}
 }
 
-func (w *Worker) Start() {
-	log.Printf("worker: name='%s' has been started\n", w.name)
+func (w *worker) start() {
+	log.Printf("worker: Name='%s' has been started\n", w.name)
 	w.active = true
 	for {
 		select {
-		case needClose, notEmpty := <-w.closer:
+		case needClose, notEmpty := <-w.close:
 			if notEmpty && needClose {
 				return
 			}
 		default:
-			if err := w.f(); err != nil {
-				log.Printf("worker: name='%s' error='%v'", w.name, err)
+			if err := w.function(); err != nil {
+				log.Printf(workerErr, w.name, err)
 			}
 		}
 
-		time.Sleep(w.interval)
+		time.Sleep(w.period)
 	}
 }
 
-func (w *Worker) Stop() {
-	log.Printf("worker: name='%s' has been stopped\n", w.name)
-	w.closer <- true
-	close(w.closer)
+func (w *worker) stop() {
+	log.Printf("worker: Name='%s' has been stopped\n", w.name)
+	w.close <- true
+	close(w.close)
 	w.active = false
 }
 
-func (w *Worker) Restart() {
-	log.Printf("worker: name='%s' has been restarted\n", w.name)
-	w.Stop()
-	w.Start()
+func (w *worker) restart() {
+	log.Printf("worker: Name='%s' has been restarted\n", w.name)
+	w.stop()
+	w.start()
 }
 
-func (w *Worker) IsActive() bool {
+func (w *worker) isActive() bool {
 	return w.active
 }
 
-func (w *Worker) ChangeInterval(new time.Duration) {
-	w.interval = new
+func (w *worker) changeInterval(new time.Duration) {
+	w.period = new
 	if w.active {
-		w.Restart()
+		w.restart()
 	}
 }
+
+type WorkerFunc func() error
