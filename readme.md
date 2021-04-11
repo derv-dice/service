@@ -23,50 +23,45 @@ func main() {
 	mux.Get("/", func(w web.ResponseWriter, r *web.Request) {
 		w.Write([]byte("hello from service"))
 	})
-	mux.Post("/hook_handler", func(w web.ResponseWriter, r *web.Request) {
-		fmt.Println("hook received")
-	})
-	mux.Post("/hook_handler_2", func(w web.ResponseWriter, r *web.Request) {
-		fmt.Println("hook 2 received")
-	})
 
 	functions := service.NewHookFuncMap()
 	functions.Add("fun_1", func() *service.Form {
-		fmt.Println("fun_1")
-		return nil
+		form := service.NewForm()
+		form.Add("time", "wake up")
+		return form
 	})
 	functions.Add("fun_2", func() *service.Form {
-		fmt.Println("fun_2")
-		return nil
+		form := service.NewForm()
+		form.Add("time", time.Now().Format(time.RFC822))
+		return form
 	})
 
 	s, err := service.New(
-		"service_name",
+		"",
 		service.Config{
 			Addr: "localhost:8080",
 			Mux:  mux,
 		},
-		fmt.Sprintf("postgres://%s:%s@%s:%d/%s", "user", "password", "host", 5432, "db_name"),
+		fmt.Sprintf("postgres://%s:%s@%s:%d/%s", "derv_dice", "test123", "localhost", 5432, "service_test"),
 		functions,
 	)
 
 	if err != nil {
 		log.Fatal(err)
 	}
-	
-	s.DeleteHook("hook_1")
-	s.DeleteHook("hook_2")
-	s.AddHook("hook_1", "fun_1")
-	s.AddHook("hook_2", "fun_2")
 
-	s.AddWorker("hook_1_trigger", time.Second*5, func() error {
+	s.DeleteHook("hook_1")
+	s.AddHook("hook_1", "fun_1")
+	s.AddWorker("hook_1_trigger", time.Second*5, func() (_ error) {
 		s.TriggerHook("hook_1")
-		return nil
+		return
 	})
 
-	s.AddWorker("hook_2_trigger", time.Second*5, func() error {
+	s.DeleteHook("hook_2")
+	s.AddHook("hook_2", "fun_2")
+	s.AddWorker("hook_2_trigger", time.Second*5, func() (_ error) {
 		s.TriggerHook("hook_2")
-		return nil
+		return
 	})
 
 	go s.Start("", "")

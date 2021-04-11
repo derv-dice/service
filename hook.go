@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -54,13 +55,14 @@ func (h *hook) trigger() (err error) {
 
 	// Выполняем функцию
 	form := h.function.Function()
-	//if form == nil {
-	//	return fmt.Errorf("hook: Name='%s' error='fuction for triggerByName hook not found", h.name)
-	//}
+	if form == nil {
+		return fmt.Errorf("hook: name='%s' error='fuction for hook.trigger() not found", h.name)
+	}
 
 	// Отправка обратных запросов подписчикам
 	for i := range s {
-		// TODO ограничить максимальное количество одновременно работающих горутин
+		// TODO ограничить максимальное количество одновременно работающих горутин, введя очередь отправки запросов
+		//	 p.s. Пока что не нужно
 		go h.sendToSub(s[i], form)
 	}
 	return
@@ -85,6 +87,22 @@ func (h *hook) loadSubs() (s []*Subscriber, err error) {
 	return
 }
 
+func newRequest(sub *Subscriber, form *Form) (req *http.Request, err error) {
+	data, contentType, err := form.Data()
+	if err != nil {
+		return
+	}
+
+	switch form {
+	case nil:
+		req, _ = http.NewRequest(http.MethodPost, sub.URL, nil)
+	default:
+		req, _ = http.NewRequest(http.MethodPost, sub.URL, data)
+		req.Header.Set("Content-Type", contentType)
+	}
+	return
+}
+
 func (h *hook) sendToSub(sub *Subscriber, form *Form) {
 	// Если превышен счетчик отправок у подписчика, то автоматически отписываем его (удаляем из БД)
 	if sub.ErrCount >= maxErrCount {
@@ -92,30 +110,23 @@ func (h *hook) sendToSub(sub *Subscriber, form *Form) {
 		return
 	}
 
-	var req *http.Request
 	var err error
-
-	switch form {
-	case nil:
-		if req, err = http.NewRequest(http.MethodPost, sub.URL, nil); err != nil {
-			return
-		}
-	default:
-		if req, err = http.NewRequest(http.MethodPost, sub.URL, form.Payload); err != nil {
-			return
-		}
-		req.Header.Set("Content-Type", form.ContentType)
+	var resp *http.Response
+	var req *http.Request
+	req, err = newRequest(sub, form)
+	if err != nil {
+		log.Printf(errorLog, err)
+		return
 	}
 
-	var resp *http.Response
 	resp, err = h.client.Do(req)
 	if err != nil {
 		// В случае ошибки - сразу выход
 		log.Printf("hook: error sending request, url='%s' error='%v'", sub.URL, err)
 
-		// Это значит, что хост недоступен попробуем через минуту
+		// Это значит, что хост недоступен попробуем еще раз
 		if strings.Contains(err.Error(), "connection refused") {
-			go h.resendToSub(req, sub)
+			go h.resendToSub(sub, form)
 		}
 		return
 	}
@@ -133,18 +144,24 @@ func (h *hook) sendToSub(sub *Subscriber, form *Form) {
 		log.Printf(hookWarning, h.name, fmt.Sprintf("subscription url='%s' deleted cause status code 4xx received", sub.URL))
 	case 5:
 		// Если вернулся 5xx код, то нужно это отметить в БД и попробовать повторить отправку через минуту
-		go h.resendToSub(req, sub)
+		go h.resendToSub(sub, form)
 	default:
 		// Нестандартное поведение логируем
 		log.Printf("hook: error sending request, url='%s' error='unexpected status code %d'", sub.URL, resp.StatusCode)
 	}
 }
 
-func (h *hook) resendToSub(r *http.Request, sub *Subscriber) {
-	var resp *http.Response
+func (h *hook) resendToSub(sub *Subscriber, form *Form) {
 	var err error
+	var resp *http.Response
+	var req *http.Request
+	req, err = newRequest(sub, form)
+	if err != nil {
+		log.Printf(errorLog, err)
+		return
+	}
 
-	resp, err = h.client.Do(r)
+	resp, err = h.client.Do(req)
 	if err != nil || resp.StatusCode != 200 {
 		sub.incErrCount()
 	}
@@ -170,6 +187,32 @@ type HookFunc struct {
 }
 
 type Form struct {
-	Payload     *bytes.Buffer
+	Payload     map[string]string
 	ContentType string
+}
+
+func NewForm() *Form {
+	return &Form{
+		Payload:     map[string]string{},
+		ContentType: "",
+	}
+}
+
+func (f *Form) Data() (buf *bytes.Buffer, ContentType string, err error) {
+	buf = &bytes.Buffer{}
+	w := multipart.NewWriter(buf)
+	for k, v := range f.Payload {
+		if err = w.WriteField(k, v); err != nil {
+			return nil, "", err
+		}
+	}
+	if err = w.Close(); err != nil {
+		log.Printf(warningLog, "error while closing multipart.Writer")
+	}
+	ContentType = w.FormDataContentType()
+	return
+}
+
+func (f *Form) Add(key, value string) {
+	f.Payload[key] = value
 }

@@ -1,1 +1,5 @@
 .idea/
+
+# Для тестов можно создать директорию main/ и поместить туда код из примера:
+# https://github.com/derv-dice/service#using-example
+main/

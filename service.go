@@ -24,6 +24,9 @@ const (
 	hookWarning   = "hook: name='%s' warning='%s'"
 	workerErr     = "worker: name='%s' error='%v'"
 	workerWarning = "worker: name='%s' warning='%s'"
+
+	warningLog = "warning: %v"
+	errorLog   = "error: %v"
 )
 
 // Service - фасад, предоставляющий все методы по настройке, запуску и управлению отдельными частями сервиса
