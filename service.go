@@ -111,7 +111,7 @@ func (s *Service) Start(cert, key string) {
 	}
 
 	s.pgConf = &pgConf
-	if s.pg, err = pgx.NewConnPool(pgx.ConnPoolConfig{MaxConnections: 100, ConnConfig: *s.pgConf}); err != nil {
+	if s.pg, err = pgx.NewConnPool(pgx.ConnPoolConfig{MaxConnections: 90, ConnConfig: *s.pgConf}); err != nil {
 		return
 	}
 

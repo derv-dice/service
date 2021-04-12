@@ -6,7 +6,6 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx"
@@ -61,9 +60,7 @@ func (h *hook) trigger() (err error) {
 
 	// Отправка обратных запросов подписчикам
 	for i := range s {
-		// TODO ограничить максимальное количество одновременно работающих горутин, введя очередь отправки запросов
-		//	 p.s. Пока что не нужно
-		go h.sendToSub(s[i], form)
+		sendQueue.Push(newSendTask(s[i], form, false))
 	}
 	return
 }
@@ -101,70 +98,6 @@ func newRequest(sub *Subscriber, form *Form) (req *http.Request, err error) {
 		req.Header.Set("Content-Type", contentType)
 	}
 	return
-}
-
-func (h *hook) sendToSub(sub *Subscriber, form *Form) {
-	// Если превышен счетчик отправок у подписчика, то автоматически отписываем его (удаляем из БД)
-	if sub.ErrCount >= maxErrCount {
-		sub.incErrCount()
-		return
-	}
-
-	var err error
-	var resp *http.Response
-	var req *http.Request
-	req, err = newRequest(sub, form)
-	if err != nil {
-		log.Printf(errorLog, err)
-		return
-	}
-
-	resp, err = h.client.Do(req)
-	if err != nil {
-		// В случае ошибки - сразу выход
-		log.Printf("hook: error sending request, url='%s' error='%v'", sub.URL, err)
-
-		// Это значит, что хост недоступен попробуем еще раз
-		if strings.Contains(err.Error(), "connection refused") {
-			go h.resendToSub(sub, form)
-		}
-		return
-	}
-
-	switch resp.StatusCode / 100 {
-	case 2:
-		// При положительном ответе сбрасываем счетчик ошибок обратно до 0
-		sub.resetErrCount()
-	case 4:
-		// Если вернулся 4xx код, значит хост существует, а URL указан некорректно. Можем сразу удалять такой
-		_, err = h.service.pg.Exec(sqlDeleteSub, h.name, sub.URL)
-		if err != nil {
-			log.Printf(hookErr, h.name, fmt.Sprintf("cannot delete subscription url='%s'", sub.URL))
-		}
-		log.Printf(hookWarning, h.name, fmt.Sprintf("subscription url='%s' deleted cause status code 4xx received", sub.URL))
-	case 5:
-		// Если вернулся 5xx код, то нужно это отметить в БД и попробовать повторить отправку через минуту
-		go h.resendToSub(sub, form)
-	default:
-		// Нестандартное поведение логируем
-		log.Printf("hook: error sending request, url='%s' error='unexpected status code %d'", sub.URL, resp.StatusCode)
-	}
-}
-
-func (h *hook) resendToSub(sub *Subscriber, form *Form) {
-	var err error
-	var resp *http.Response
-	var req *http.Request
-	req, err = newRequest(sub, form)
-	if err != nil {
-		log.Printf(errorLog, err)
-		return
-	}
-
-	resp, err = h.client.Do(req)
-	if err != nil || resp.StatusCode != 200 {
-		sub.incErrCount()
-	}
 }
 
 type HookFuncMap map[string]HookFunc
